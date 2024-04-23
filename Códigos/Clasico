@@ -1,0 +1,77 @@
+from concurrent import futures
+import grpc
+import redis
+import mysql.connector
+import logging
+
+import wine_pb2
+import wine_pb2_grpc
+
+# Configuración de los mensajes de registro con nivel de importancia INFO
+logging.basicConfig(level=logging.INFO)
+
+# Intenta conectar con Redis en el puerto local 6379 y la base de datos número 0
+try:
+    r = redis.Redis(host='localhost', port=6379, db=0)
+except redis.RedisError as e:
+    # Si la conexión falla, registra el error
+    logging.error(f"Error al conectar con Redis: {e}")
+
+# Intenta conectar con MySQL usando las credenciales proporcionadas
+try:
+    mydb = mysql.connector.connect(
+      host="localhost",
+      user="root",
+      password="Fofolito2020.",
+      database="mydatabase"
+    )
+    # Crea un cursor para interactuar con la base de datos MySQL
+    cursor = mydb.cursor()
+except mysql.connector.Error as e:
+    # Si la conexión falla, registra el error
+    logging.error(f"Error al conectar con MySQL: {e}")
+
+# Definición de la clase del servicio de catadores de vino, que hereda de la clase generada por gRPC
+class WineTasterService(wine_pb2_grpc.WineTasterServicer):
+    def GetTasterInfo(self, request, context):
+        # Intenta obtener el nombre del catador de vino de Redis usando el ID proporcionado en la solicitud
+        try:
+            taster_name = r.get(request.id)
+            if taster_name:
+                # Si el nombre está en caché, regístralo y devuelve la respuesta
+                logging.info(f"Respondido desde el caché de Redis para el ID: {request.id}")
+                return wine_pb2.TasterResponse(tasterName=taster_name.decode('utf-8'), fromCache=True)
+        except redis.RedisError as e:
+            # Registra cualquier error que ocurra al acceder a Redis
+            logging.error(f"Error al recuperar datos de Redis: {e}")
+
+        # Si el nombre no está en Redis, consulta MySQL
+        try:
+            cursor.execute("SELECT taster_name FROM wine_tasters WHERE id = %s", (request.id,))
+            result = cursor.fetchone()
+            if result is None:
+                response = "ID no existe"
+            elif result[0]:
+                taster_name = result[0]
+                # Almacena el nombre del catador en Redis y establece un tiempo de expiración de 1 hora
+                r.set(request.id, taster_name)
+                r.expire(request.id, 3600)
+            else:
+                taster_name = "Taster no identificado"
+            return wine_pb2.TasterResponse(tasterName=taster_name if result else response, fromCache=False)
+        except mysql.connector.Error as e:
+            # Registra cualquier error que ocurra al acceder a MySQL
+            logging.error(f"Error al acceder a MySQL: {e}")
+            return wine_pb2.TasterResponse(tasterName="Error de base de datos", fromCache=False)
+
+# Función para configurar y ejecutar el servidor gRPC
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    wine_pb2_grpc.add_WineTasterServicer_to_server(WineTasterService(), server)
+    server.add_insecure_port('[::]:50051')
+    server.start()
+    # Mantén el servidor en ejecución hasta que sea interrumpido o finalizado
+    server.wait_for_termination()
+
+if __name__ == '__main__':
+    serve()

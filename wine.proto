@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package wine;
+
+service WineTaster {
+  rpc GetTasterInfo(TasterRequest) returns (TasterResponse) {}
+}
+
+message TasterRequest {
+  string id = 1;
+}
+
+message TasterResponse {
+  string tasterName = 1;
+  bool fromCache = 2; // Indica si la respuesta viene del caché
+}
