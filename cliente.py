@@ -8,7 +8,7 @@ def read_ids_from_file(file_path):
     with open(file_path, 'r') as file:
         ids = file.read().split(', ')
     return ids
-
+#LINK VIDEO QUE SE ME OLVIDÖ PONERLO EN EL DOCUMENTO PDF https://youtu.be/La42CEb13So
 def run():
     with grpc.insecure_channel('localhost:50051') as channel:
         stub = wine_pb2_grpc.WineTasterStub(channel)
